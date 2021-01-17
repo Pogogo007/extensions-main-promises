@@ -315,13 +315,14 @@ const MANGA_ENDPOINT = PAPERBACK_API + '/manga';
 const CHAPTER_LIST_ENDPOINT = MANGADEX_API + '/manga';
 const CHAPTER_DETAILS_ENDPOINT = MANGADEX_API + '/chapter';
 const SEARCH_ENDPOINT = PAPERBACK_API + '/search';
+const MANGA_RECENT = MANGADEX_DOMAIN + '/updates';
 exports.MangaDexInfo = {
-    author: 'Faizan Durrani',
-    description: 'The default source for Papaerback, supports notifications',
+    author: 'Neko',
+    description: 'Overwrites SafeDex,unlocks all mangas MangaDex has to offer and loads slightly faster. supports notifications',
     icon: 'icon.png',
-    name: 'SafeDex',
-    version: '2.0.3',
-    authorWebsite: 'https://github.com/FaizanDurrani',
+    name: 'MangaDex Unlocked',
+    version: '2.0.4',
+    authorWebsite: 'https://github.com/Pogogo007/extensions-main-promises',
     websiteBaseURL: MANGADEX_DOMAIN,
     hentaiSource: false,
     language: paperback_extensions_common_1.LanguageCode.ENGLISH,
@@ -350,6 +351,7 @@ class MangaDex extends paperback_extensions_common_1.Source {
             },
             data: JSON.stringify({
                 id: [parseInt(mangaId)],
+                bypassFilter: true,
             }),
         });
         const response = await this.requestManager.schedule(request, 1);
@@ -371,6 +373,7 @@ class MangaDex extends paperback_extensions_common_1.Source {
                 },
                 data: JSON.stringify({
                     id: batchedIds.map(x => parseInt(x)),
+                    bypassFilter: true,
                 }),
             });
             // eslint-disable-next-line no-await-in-loop
@@ -421,6 +424,17 @@ class MangaDex extends paperback_extensions_common_1.Source {
     async getHomePageSections(sectionCallback) {
         const sections = [
             {
+                request: createRequestObject({
+                    url: MANGA_RECENT,
+                    method: 'GET',
+                }),
+                section: createHomeSection({
+                    id: 'recently_updated',
+                    title: 'RECENTLY UPDATED TITLES',
+                    view_more: true,
+                }),
+            },
+            {
                 request: this.constructSearchRequest({
                     includeDemographic: ['1'],
                 }, 1, 10),
@@ -447,14 +461,62 @@ class MangaDex extends paperback_extensions_common_1.Source {
             sectionCallback(section.section);
             // Get the section data
             promises.push(this.requestManager.schedule(section.request, 1).then(response => {
-                const json = JSON.parse(response.data);
-                const tiles = this.parser.parseMangaTiles(json);
-                section.section.items = tiles;
+                var _a, _b, _c, _d, _e;
+                if (section.section.id == 'recently_updated') {
+                    let $ = this.cheerio.load(response.data);
+                    let updates = [];
+                    let elem = $('tr', 'tbody').toArray();
+                    let i = 0;
+                    while (i < elem.length) {
+                        let hasImg = false;
+                        let idStr = (_a = $('a.manga_title', elem[i]).attr('href')) !== null && _a !== void 0 ? _a : '';
+                        let id = (_c = ((_b = idStr.match(/(\d+)(?=\/)/)) !== null && _b !== void 0 ? _b : '')[0]) !== null && _c !== void 0 ? _c : '';
+                        let title = (_d = $('a.manga_title', elem[i]).text()) !== null && _d !== void 0 ? _d : '';
+                        let image = (_e = (MANGADEX_DOMAIN + $('img', elem[i]).attr('src'))) !== null && _e !== void 0 ? _e : '';
+                        // in this case: badge will be number of updates
+                        // that the manga has received within last week
+                        let badge = 0;
+                        let pIcon = 'eye.fill';
+                        let sIcon = 'clock.fill';
+                        let subTitle = '';
+                        let pText = '';
+                        let sText = '';
+                        let first = true;
+                        i++;
+                        while (!hasImg && i < elem.length) {
+                            // for the manga tile, we only care about the first/latest entry
+                            if (first && !hasImg) {
+                                subTitle = $('a', elem[i]).first().text();
+                                pText = $('.text-center.text-info', elem[i]).text();
+                                sText = $('time', elem[i]).text().replace('ago', '').trim();
+                                first = false;
+                            }
+                            badge++;
+                            i++;
+                            hasImg = $(elem[i]).find('img').length > 0;
+                        }
+                        updates.push(createMangaTile({
+                            id,
+                            image,
+                            title: createIconText({ text: title }),
+                            subtitleText: createIconText({ text: subTitle }),
+                            primaryText: createIconText({ text: pText, icon: pIcon }),
+                            secondaryText: createIconText({ text: sText, icon: sIcon }),
+                            badge
+                        }));
+                    }
+                    section.section.items = updates;
+                }
+                else {
+                    const json = JSON.parse(response.data);
+                    const tiles = this.parser.parseMangaTiles(json);
+                    section.section.items = tiles;
+                }
                 sectionCallback(section.section);
             }));
+            // Make sure the function completes
+            await Promise.all(promises);
         }
-        // Make sure the function completes
-        await Promise.all(promises);
     }
     async filterUpdatedManga(mangaUpdatesFoundCallback, time, ids) {
         const allManga = new Set(ids);
@@ -511,6 +573,7 @@ class MangaDex extends paperback_extensions_common_1.Source {
                 artist: query.artist,
                 status: query.status,
                 hStatus: query.hStatus,
+                bypassFilter: true,
             }),
             headers: {
                 'content-type': 'application/json',
