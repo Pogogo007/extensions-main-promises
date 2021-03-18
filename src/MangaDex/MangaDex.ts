@@ -11,8 +11,7 @@ import {
   LanguageCode,
   TagType,
   MangaUpdates,
-  Request,
-  MangaTile
+  Request
 } from 'paperback-extensions-common'
 
 import {
@@ -38,7 +37,6 @@ const MANGA_ENDPOINT = PAPERBACK_API + '/manga'
 const CHAPTER_LIST_ENDPOINT = MANGADEX_API_V2 + '/manga'
 const CHAPTER_DETAILS_ENDPOINT = MANGADEX_API_V2 + '/chapter'
 const SEARCH_ENDPOINT = PAPERBACK_API + '/search'
-const MANGA_RECENT = MANGADEX_DOMAIN + '/updates'
 
 export const MangaDexInfo: SourceInfo = {
   author: 'Neko',
@@ -170,10 +168,7 @@ export class MangaDex extends Source {
   async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
     const sections = [
       {
-        request: createRequestObject({
-          url: MANGA_RECENT,
-          method: 'GET',
-        }),
+        request: this.constructSearchRequest({}, 1, 10),
         section: createHomeSection({
           id: 'recently_updated',
           title: 'RECENTLY UPDATED TITLES',
@@ -199,79 +194,8 @@ export class MangaDex extends Source {
           title: 'UPDATED ACTION TITLES',
           view_more: true,
         }),
-      },
+      }
     ]
-
-    const promises: Promise<void>[] = []
-
-    for (const section of sections) {
-      // Let the app load empty sections
-      sectionCallback(section.section)
-
-      // Get the section data
-      promises.push(
-        this.requestManager.schedule(section.request, 1).then(response => {
-          if (section.section.id == 'recently_updated') {
-            let $ = this.cheerio.load(response.data);
-            let updates: MangaTile[] = [];
-            let elem = $('tr', 'tbody').toArray();
-            let i = 0;
-
-            while (i < elem.length) {
-              let hasImg: boolean = false;
-              let idStr: string = $('a.manga_title', elem[i]).attr('href') ?? '';
-              let id: string = (idStr.match(/(\d+)(?=\/)/) ?? '')[0] ?? '';
-              let title: string = $('a.manga_title', elem[i]).text() ?? '';
-              let image: string = (MANGADEX_DOMAIN + $('img', elem[i]).attr('src')) ?? '';
-
-              // in this case: badge will be number of updates
-              // that the manga has received within last week
-              let badge = 0;
-              let pIcon = 'eye.fill';
-              let sIcon = 'clock.fill';
-              let subTitle = '';
-              let pText = '';
-              let sText = '';
-
-              let first = true;
-              i++;
-              while (!hasImg && i < elem.length) {
-                // for the manga tile, we only care about the first/latest entry
-                if (first && !hasImg) {
-                  subTitle = $('a', elem[i]).first().text();
-                  pText = $('.text-center.text-info', elem[i]).text();
-                  sText = $('time', elem[i]).text().replace('ago', '').trim();
-                  first = false;
-                }
-                badge++;
-                i++;
-
-                hasImg = $(elem[i]).find('img').length > 0;
-              }
-
-              updates.push(createMangaTile({
-                id,
-                image,
-                title: createIconText({ text: title }),
-                subtitleText: createIconText({ text: subTitle }),
-                primaryText: createIconText({ text: pText, icon: pIcon }),
-                secondaryText: createIconText({ text: sText, icon: sIcon }),
-                badge
-              }));
-            }
-            section.section.items = updates
-          } else {
-            const json = JSON.parse(response.data) as any
-            const tiles = this.parser.parseMangaTiles(json)
-
-            section.section.items = tiles
-          }
-          sectionCallback(section.section)
-        })
-      )
-      // Make sure the function completes
-      await Promise.all(promises)
-    }
   }
 
   async filterUpdatedManga(mangaUpdatesFoundCallback: (updates: MangaUpdates) => void, time: Date, ids: string[]): Promise<void> {
