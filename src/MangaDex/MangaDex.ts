@@ -196,6 +196,26 @@ export class MangaDex extends Source {
         }),
       }
     ]
+    const promises: Promise<void>[] = []
+
+    for (const section of sections) {
+      // Let the app load empty sections
+      sectionCallback(section.section)
+
+      // Get the section data
+      promises.push(
+        this.requestManager.schedule(section.request, 1).then(response => {
+          const json = JSON.parse(response.data) as any
+          const tiles = this.parser.parseMangaTiles(json)
+
+          section.section.items = tiles
+          sectionCallback(section.section)
+        }),
+      )
+    }
+
+    // Make sure the function completes
+    await Promise.all(promises)
   }
 
   async filterUpdatedManga(mangaUpdatesFoundCallback: (updates: MangaUpdates) => void, time: Date, ids: string[]): Promise<void> {
@@ -273,6 +293,7 @@ export class MangaDex extends Source {
       action: this.constructSearchRequest({
         includeGenre: ['2'],
       }, metadata?.page ?? 1, 50),
+      recently_updated: this.constructSearchRequest({}, metadata?.page ?? 1, 50),
     }
 
     const request = requests[homepageSectionId]
