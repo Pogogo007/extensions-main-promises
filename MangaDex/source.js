@@ -453,6 +453,20 @@ class MangaDex extends paperback_extensions_common_1.Source {
                 }),
             }
         ];
+        const promises = [];
+        for (const section of sections) {
+            // Let the app load empty sections
+            sectionCallback(section.section);
+            // Get the section data
+            promises.push(this.requestManager.schedule(section.request, 1).then(response => {
+                const json = JSON.parse(response.data);
+                const tiles = this.parser.parseMangaTiles(json);
+                section.section.items = tiles;
+                sectionCallback(section.section);
+            }));
+        }
+        // Make sure the function completes
+        await Promise.all(promises);
     }
     async filterUpdatedManga(mangaUpdatesFoundCallback, time, ids) {
         const allManga = new Set(ids);
@@ -517,7 +531,7 @@ class MangaDex extends paperback_extensions_common_1.Source {
         });
     }
     async getViewMoreItems(homepageSectionId, metadata) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d;
         const requests = {
             shounen: this.constructSearchRequest({
                 includeDemographic: ['1'],
@@ -525,6 +539,7 @@ class MangaDex extends paperback_extensions_common_1.Source {
             action: this.constructSearchRequest({
                 includeGenre: ['2'],
             }, (_b = metadata === null || metadata === void 0 ? void 0 : metadata.page) !== null && _b !== void 0 ? _b : 1, 50),
+            recently_updated: this.constructSearchRequest({}, (_c = metadata === null || metadata === void 0 ? void 0 : metadata.page) !== null && _c !== void 0 ? _c : 1, 50),
         };
         const request = requests[homepageSectionId];
         const response = await this.requestManager.schedule(request, 1);
@@ -533,7 +548,7 @@ class MangaDex extends paperback_extensions_common_1.Source {
         return createPagedResults({
             results: tiles,
             metadata: {
-                page: ((_c = metadata === null || metadata === void 0 ? void 0 : metadata.page) !== null && _c !== void 0 ? _c : 1) + 1,
+                page: ((_d = metadata === null || metadata === void 0 ? void 0 : metadata.page) !== null && _d !== void 0 ? _d : 1) + 1,
             },
         });
     }
